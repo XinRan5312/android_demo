@@ -6,6 +6,7 @@ import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.OverScroller;
@@ -13,7 +14,7 @@ import android.widget.OverScroller;
 import com.rg.stickynavlayout.R;
 
 /**
- * Created by RG on 2016/5/19.
+ * Created by QX on 2016/6/23.
  */
 public class StickyNavLayout extends LinearLayout {
 
@@ -36,9 +37,6 @@ public class StickyNavLayout extends LinearLayout {
 
     //ListView内容总高度
     int contentHeight=0;
-
-    //ListView初始化高度
-    int startListViewHeight=0;
 
     //悬浮view是否已经进入悬浮状态
     boolean isTopHidden=false;
@@ -71,7 +69,7 @@ public class StickyNavLayout extends LinearLayout {
         maxFling=ViewConfiguration.get(context).getScaledMaximumFlingVelocity();
         minFling=ViewConfiguration.get(context).getScaledMinimumFlingVelocity();
 
-        scroller=new OverScroller(context);
+        scroller=new OverScroller(context,new AccelerateDecelerateInterpolator());
     }
 
     @Override
@@ -88,7 +86,7 @@ public class StickyNavLayout extends LinearLayout {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
         //初始化ListView的高度
-        startListViewHeight=getMeasuredHeight()-id_indicatorview.getMeasuredHeight()-id_topview.getMeasuredHeight();
+         mTopViewHeight=id_topview.getMeasuredHeight();
 
         //listview在可以悬浮时的高度应该为 总高度-导航条高度
         LayoutParams params= (LayoutParams) id_bottomview.getLayoutParams();
@@ -134,19 +132,14 @@ public class StickyNavLayout extends LinearLayout {
                 lastY=y;
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (Math.abs(y-lastY)>touchSlop){
                     //获取可见范围内第一个view
-                    View viewItem=id_bottomview.getChildAt(id_bottomview.getFirstVisiblePosition());
-                    //viewGroup拦截条件：
-                    //1. 顶部待隐藏view未隐藏
-                    //2. 顶部待隐藏view已经隐藏，当前操作界面是listview的时候，往上滚到达临界点
-                    if (!isTopHidden || (isTopHidden && (y-lastY)>0 && viewItem!=null && id_bottomview.getFirstVisiblePosition()==0 && viewItem.getTop()==0)) {
-                        initVelocityTrackerIfNotExists();
-                        velocityTracker.addMovement(ev);
-                        lastY=y;
-                        return true;
-                    }
+                View view=id_bottomview.getChildAt(id_bottomview.getFirstVisiblePosition());
+                //当顶部蓝色区域在显示的时候，ViewGroup接管事件
+                //当顶部蓝色区域不显示，达到悬浮条件的时候，如果ListView在滑动到最顶部并且继续向下滑动，ViewGroup接管事件
+                if (!isTopHidden ||
+                        (isTopHidden && (y-lastY)>0 && view!=null && view.getTop()==0) ) {
                     lastY=y;
+                    return true;
                 }
                 break;
             case MotionEvent.ACTION_CANCEL:
@@ -170,13 +163,7 @@ public class StickyNavLayout extends LinearLayout {
                 lastY=y;
                 return true;
             case MotionEvent.ACTION_MOVE:
-                scrollBy(0, -(y-lastY));
-                //由上往下滑动时候切换
-                if (getScrollY()==mTopViewHeight && (y-lastY)<0) {
-                    event.setAction(MotionEvent.ACTION_DOWN);
-                    dispatchTouchEvent(event);
-                    isInControl = false;
-                }
+                scrollBy(0, lastY-y);
                 lastY=y;
                 break;
             case MotionEvent.ACTION_CANCEL:
@@ -190,7 +177,7 @@ public class StickyNavLayout extends LinearLayout {
                 velocityTracker.computeCurrentVelocity(1000, maxFling);
                 int yVelocity= (int) velocityTracker.getYVelocity();
                 if (Math.abs(yVelocity)>minFling) {
-                    fling(yVelocity);
+                    scroller(yVelocity);
                 }
                 recycleVelocityTracker();
                 break;
@@ -198,40 +185,22 @@ public class StickyNavLayout extends LinearLayout {
         return super.onTouchEvent(event);
     }
 
-    private void fling(int yVelocity) {
+    private void scroller(int yVelocity) {
         scroller.fling(0, getScrollY(), 0, -yVelocity, 0, 0, 0, mTopViewHeight);
         invalidate();
     }
 
     @Override
     public void scrollTo(int x, int y) {
-        //发生过滚动重置
-        if (isReset) {
-            super.scrollTo(x, y);
-            isReset=false;
-            isTopHidden=false;
-            return;
+        if (y<0) {
+            y=0;
         }
-        //限定滚动在一定范围内
-        if (y < 0) {
-            y = 0;
+        if (y>mTopViewHeight) {
+            y=mTopViewHeight;
         }
-        //内容高度不满足滑动条件时拒绝滑动
-        if (contentHeight<startListViewHeight) {
-            y = 0;
+        if (y!=getScrollY()) {
+            super.scrollTo(0, y);
         }
-        //滚动距离不满足时候不能超过差值
-        if (y>(contentHeight-startListViewHeight) && (contentHeight-startListViewHeight)>0) {
-            y=contentHeight-startListViewHeight;
-        }
-        //滚动距离不能超过悬浮栏
-        if (y > mTopViewHeight) {
-            y = mTopViewHeight;
-        }
-        if (y != getScrollY()) {
-            super.scrollTo(x, y);
-        }
-
         //如果滚动距离与顶部view的高度一致，滚动距离达到最大，悬浮栏悬浮
         isTopHidden=getScrollY()==mTopViewHeight;
     }
@@ -259,7 +228,7 @@ public class StickyNavLayout extends LinearLayout {
         super.computeScroll();
         if (scroller.computeScrollOffset()) {
             scrollTo(0, scroller.getCurrY());
-            invalidate();
+            postInvalidate();
         }
     }
 
@@ -278,36 +247,6 @@ public class StickyNavLayout extends LinearLayout {
 
     public void setContentHeight(int item) {
         this.contentHeight=item*dp2px(context, 50);
-    }
-
-    public void reset() {
-        isReset=true;
-        //之前滚动的状态
-        int state=getState();
-        //不满足滚动条件，则直接回到初始位置
-        if (this.contentHeight<startListViewHeight) {
-            scrollBy(0, -getScrollY());
-            return;
-        }
-        //滚动距离不满足topview的高度，悬浮栏达不到置顶条件
-        if (contentHeight-startListViewHeight<mTopViewHeight) {
-            if (state==3) {
-                //只有当前listview可显示高度超过内容高度，才进行调整
-                if (startListViewHeight+getScrollY()>contentHeight) {
-                    scrollTo(0, (contentHeight-startListViewHeight));
-                }
-            }
-            else if (state==2) {
-                //只有当前listview可显示高度超过内容高度，才进行调整
-                if (startListViewHeight+getScrollY()>contentHeight) {
-                    scrollBy(0, -(startListViewHeight+getScrollY()-contentHeight));
-                }
-            }
-        }
-        //如果新设置高度超过topview的高度，悬浮栏达到置顶条件，不做改动
-        if (contentHeight-startListViewHeight>=mTopViewHeight) {
-
-        }
     }
 
     public static int dp2px(Context context, float dp) {

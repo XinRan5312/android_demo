@@ -53,7 +53,6 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this, "click2", Toast.LENGTH_SHORT).show();
 
                 changeItems(7);
-                stickyNavLayout.reset();
             }
         });
 

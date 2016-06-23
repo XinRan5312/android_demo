@@ -9,7 +9,7 @@ import android.widget.BaseAdapter;
 import java.util.ArrayList;
 
 /**
- * Created by RG on 2016/5/19.
+ * Created by QX on 2016/6/23.
  */
 public class MainAdapter extends BaseAdapter {
 
